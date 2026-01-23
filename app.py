@@ -16,6 +16,17 @@ import xmltodict
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils.dataframe import dataframe_to_rows
+# --- Light mode button visibility fix ---
+import streamlit as st
+st.markdown("""
+<style>
+div.stButton > button {
+    color: #000000 !important;
+    font-weight: 600;
+}
+</style>
+""", unsafe_allow_html=True)
+# --- End fix ---
 
 
 # -------------------------------------------------
