@@ -144,10 +144,24 @@ def safe_get_items(json_data):
 st.markdown(
     """
 <style>
+/* 1. 배경 설정: 전체 배경은 어두운 그라데이션 고정 */
 html, body, [data-testid="stAppViewContainer"] {
     background: linear-gradient(135deg, #1e1e2f 0%, #2f2f46 50%, #191926 100%);
-    color: #fff !important;
 }
+
+/* 2. 라벨 가독성: 입력창 위의 이름(타겟 집행관 등)을 금색으로 고정하여 모든 모드에서 보이게 함 */
+[data-testid="stWidgetLabel"] p {
+    color: #ffddaa !important;
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+}
+
+/* 3. 일반 텍스트 및 마크다운: 배경이 어두우므로 글자는 항상 흰색 계열 유지 */
+.stMarkdown p, .stMarkdown li, .stMarkdown span {
+    color: #ffffff !important;
+}
+
+/* 4. 애니메이션 및 기타 스타일 유지 */
 .fade-in {
     opacity: 0;
     animation: fadeIn 1.2s forwards;
