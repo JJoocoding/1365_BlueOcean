@@ -149,7 +149,7 @@ html, body, [data-testid="stAppViewContainer"] {
     background: linear-gradient(135deg, #1e1e2f 0%, #2f2f46 50%, #191926 100%);
 }
 
-/* 2. 라벨 가독성: 입력창 위의 이름(타겟 집행관 등)을 금색으로 고정하여 모든 모드에서 보이게 함 */
+/* 2. 라벨 가독성: 입력창 위의 이름(타겟 집행관 등)을 금색으로 고정 */
 [data-testid="stWidgetLabel"] p {
     color: #ffddaa !important;
     font-weight: 600 !important;
@@ -161,7 +161,21 @@ html, body, [data-testid="stAppViewContainer"] {
     color: #ffffff !important;
 }
 
-/* 4. 애니메이션 및 기타 스타일 유지 */
+/* 4. 엑셀 다운로드 버튼 가독성 고정 */
+div.stDownloadButton button {
+    background-color: #2e7d32 !important; /* 진한 초록색 배경 */
+    color: #ffffff !important;             /* 흰색 글자 */
+    font-weight: bold !important;
+    border-radius: 8px !important;
+    border: 1px solid #1b5e20 !important;
+    padding: 0.5rem 1rem !important;
+}
+div.stDownloadButton button:hover {
+    background-color: #388e3c !important; /* 호버 시 약간 밝은 초록 */
+    color: #ffffff !important;
+}
+
+/* 5. 애니메이션 및 기타 스타일 유지 */
 .fade-in {
     opacity: 0;
     animation: fadeIn 1.2s forwards;
@@ -176,10 +190,6 @@ html, body, [data-testid="stAppViewContainer"] {
     backdrop-filter: blur(8px);
     border: 1px solid rgba(255,255,255,0.2);
     text-align: center;
-    transition: 0.3s;
-}
-.metric-card:hover {
-    transform: translateY(-4px);
 }
 .glow-box {
     background: rgba(255,240,200,0.15);
