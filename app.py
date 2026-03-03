@@ -194,7 +194,7 @@ st.markdown(
  font-size:40px; font-weight:900;
  background: linear-gradient(90deg,#ffddaa,#ffd087,#ffb067);
  -webkit-background-clip:text; color:transparent;">
-🏗 1365 사정율 분석기<br>(핫존 + 블루오션 + 추천 사정률)
+🏗 1365 사정율 분석기<br>(핫존 + 블루오션v3.1 + 추천 사정률)
 </h1>
 """,
     unsafe_allow_html=True,
