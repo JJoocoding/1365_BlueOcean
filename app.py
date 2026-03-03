@@ -344,15 +344,15 @@ def find_hot_zone(actual_rates, window=0.3, step=0.05):
 
     return best_start, best_end, best_count
 
-
 # ---------------------------------------------------------
-# 🔵 블루오션 v3
+# 🔵 블루오션 v3 (업그레이드: 이동평균 적용 버전)
 # ---------------------------------------------------------
 def find_blue_ocean_v3(theoretical_rates, bidder_rates, start, end, bin_width=0.0005):
     """
     - theoretical_rates: 1365 조합 사정률 리스트
     - bidder_rates: 실제 업체 사정률 리스트
     - start, end: 분석 구간
+    - 업그레이드 내용: 점수 노이즈를 제거하기 위해 윈도우 크기 3의 이동평균을 적용
     """
 
     if start is None or end is None:
@@ -380,10 +380,6 @@ def find_blue_ocean_v3(theoretical_rates, bidder_rates, start, end, bin_width=0.
         return None, None, None
 
     rows = []
-    best_score = -1
-    best_range = None
-    best_center = None
-
     for i in range(len(bin_edges) - 1):
         s = bin_edges[i]
         e = bin_edges[i + 1]
@@ -392,10 +388,7 @@ def find_blue_ocean_v3(theoretical_rates, bidder_rates, start, end, bin_width=0.
         tcount = theo_counts[i]
         bcount = bid_counts[i]
 
-        if tcount == 0:
-            continue
-
-        demand = theo_norm[i] / max_theo
+        demand = theo_norm[i] / max_theo if tcount > 0 else 0
         supply_inv = 1.0 / (bcount + 1.0)
         score = demand * supply_inv
 
@@ -403,18 +396,28 @@ def find_blue_ocean_v3(theoretical_rates, bidder_rates, start, end, bin_width=0.
             "center": c,
             "score": score,
             "theo_count": int(tcount),
-            "bid_count": int(bcount)
+            "bid_count": int(bcount),
+            "start": s,
+            "end": e
         })
-
-        if score > best_score:
-            best_score = score
-            best_range = (s, e)
-            best_center = c
 
     if not rows:
         return None, None, None
 
     df_blue = pd.DataFrame(rows).sort_values("center").reset_index(drop=True)
+
+    # --- [알고리즘 업그레이드 포인트: Rolling Average 적용] ---
+    # 윈도우 3으로 이동평균( smoothed_score )을 구하여 군집된 높은 점수 구역 탐지
+    df_blue['smoothed_score'] = df_blue['score'].rolling(window=3, center=True, min_periods=1).mean()
+    
+    # 이동평균 점수가 가장 높은 행을 최적의 지점으로 선택
+    best_idx = df_blue['smoothed_score'].idxmax()
+    best_row = df_blue.loc[best_idx]
+    
+    best_range = (best_row['start'], best_row['end'])
+    best_center = best_row['center']
+    # ------------------------------------------------------
+
     return df_blue, best_range, best_center
 
 
@@ -469,10 +472,13 @@ def render_winrate_panel(winner_rates, hot_start, hot_end):
 
     st.markdown(
         f"""
-        <div style="padding:12px; border-radius:10px; 
+        <div style="padding:12px;
+ border-radius:10px; 
              border:1px solid {color}; margin-top:15px;">
-            <h3 style="color:{color}; margin:0;">📊 승률 분석 패널</h3>
-            <p style="color:#ccc; margin-top:4px;">핫존 내 승률 비교</p>
+            <h3 style="color:{color};
+ margin:0;">📊 승률 분석 패널</h3>
+            <p style="color:#ccc;
+ margin-top:4px;">핫존 내 승률 비교</p>
             <b style="color:{color};">{trust}</b>
         </div>
         """,
@@ -678,7 +684,6 @@ def analyze_gongo(gongo_input_str: str, api_warnings: list):
 
 # -------------------------------------------------
 # 전체 실행 + 엑셀 저장
-#   ※ theoretical_rates_all / bidder_rates_all 함께 반환
 # -------------------------------------------------
 def process_analysis(target_officer: str, gongo_input: str):
     api_warnings = []
@@ -742,7 +747,6 @@ def process_analysis(target_officer: str, gongo_input: str):
     theoretical_rates_all = []
     bidder_rates_all = []
 
-    # 진행 상황 표시용 프로그레스바
     total = len(gongo_list)
     progress_bar = st.progress(0.0, text="분석 준비 중...")
 
@@ -757,7 +761,6 @@ def process_analysis(target_officer: str, gongo_input: str):
             w_rate = info["rate"]
 
             if target_clean:
-                # 집행관 필터
                 if officer != target_clean:
                     logs.append(f"⛔ [제외] {gongo} | 집행관: {officer}")
                 else:
@@ -816,7 +819,6 @@ def process_analysis(target_officer: str, gongo_input: str):
             bidder_rates_all,
         )
 
-    # 통합 테이블 생성
     all_rates = pd.concat([r["df"]["rate"] for r in results_for_merge]).unique()
     merged_df = pd.DataFrame({"rate": all_rates}).sort_values("rate").reset_index(
         drop=True
@@ -841,7 +843,6 @@ def process_analysis(target_officer: str, gongo_input: str):
 
     merged_df = merged_df.sort_values("rate").reset_index(drop=True).fillna("")
 
-    # 화면용 1행: 1순위 사정률
     header_row = {"rate": "1순위 사정률(%)"}
     for col in merged_df.columns[1:]:
         wr = col_index_to_winrate.get(col)
@@ -850,16 +851,12 @@ def process_analysis(target_officer: str, gongo_input: str):
         [pd.DataFrame([header_row]), merged_df], ignore_index=True
     )
 
-    # ---------------------------
-    # 그래프 + 블루오션 분석
-    # ---------------------------
     hot_start, hot_end = None, None
     if winner_rates:
         hot_start, hot_end, _ = find_hot_zone(winner_rates)
         if hot_start is None or hot_end is None:
             hot_start, hot_end = min(winner_rates), max(winner_rates)
 
-    # 메인 산점도
     chart_main = None
     if scatter_data:
         chart_df = pd.DataFrame(scatter_data, columns=["rate", "공고번호", "업체명"])
@@ -900,7 +897,6 @@ def process_analysis(target_officer: str, gongo_input: str):
             .interactive()
         )
 
-    # 블루오션 v3 (핫존 기준)
     blue_df, best_range, best_center = None, None, None
     if (
         hot_start is not None
@@ -909,22 +905,16 @@ def process_analysis(target_officer: str, gongo_input: str):
         and bidder_rates_all
     ):
         blue_df, best_range, best_center = find_blue_ocean_v3(
-            theoretical_rates_all,
-            bidder_rates_all,
-            hot_start,
-            hot_end,
-            bin_width=0.0005,
+            theoretical_rates_all, bidder_rates_all, hot_start, hot_end, bin_width=0.0005
         )
 
     chart_gap = None
     blue_desc = ""
     best_range_str = "없음"
     rec_rate = None
-
     if blue_df is not None and best_range is not None:
         best_range_str = f"{best_range[0]:.3f}% ~ {best_range[1]:.3f}%"
         rec_rate = round(best_range[1], 4)
-
         blue_plot_df = blue_df.rename(
             columns={"center": "구간중심", "score": "블루오션점수"}
         )
@@ -948,11 +938,10 @@ def process_analysis(target_officer: str, gongo_input: str):
             .properties(title="💎 블루오션 탐지 (핫존 내부)")
             .interactive()
         )
-
         blue_desc = (
             f"- 이 집행관의 핫존(**{hot_start:.3f}% ~ {hot_end:.3f}%**) 안에서\n"
-            f"  1365 이론 조합 밀도는 높지만 실제 투찰 업체 수는 상대적으로 적은\n"
-            f"  **최상위 블루오션 구간**은 👉 **{best_range_str}** 입니다.\n"
+            f" 1365 이론 조합 밀도는 높지만 실제 투찰 업체 수는 상대적으로 적은\n"
+            f" **최상위 블루오션 구간**은 👉 **{best_range_str}** 입니다.\n"
         )
         if rec_rate is not None:
             blue_desc += (
@@ -963,7 +952,7 @@ def process_analysis(target_officer: str, gongo_input: str):
         if not winner_rates:
             blue_desc = (
                 "- 현재 유효한 1순위 사정율 데이터가 없어 블루오션을 계산할 수 없습니다.\n"
-                "  개찰이 완료된 공고를 더 추가해 보시거나, 일부 공고의 데이터를 다시 확인해 보세요.\n"
+                " 개찰이 완료된 공고를 더 추가해 보시거나, 일부 공고의 데이터를 다시 확인해 보세요.\n"
             )
         else:
             blue_desc = (
@@ -974,7 +963,6 @@ def process_analysis(target_officer: str, gongo_input: str):
     total_input = len(gongo_list)
     filtered = len(results_for_merge)
     missing = total_input - filtered
-
     stats = {
         "total": total_input,
         "filtered": filtered,
@@ -985,13 +973,13 @@ def process_analysis(target_officer: str, gongo_input: str):
 
     if winner_rates and hot_start is not None and hot_end is not None:
         hotzone_text = (
-            f"- 실제 1순위 사정율이 가장 많이 몰린 구간(핫존)은  \n"
-            f"  👉 **{hot_start:.3f}% ~ {hot_end:.3f}%** 입니다.\n"
+            f"- 실제 1순위 사정율이 가장 많이 몰린 구간(핫존)은 \n"
+            f" 👉 **{hot_start:.3f}% ~ {hot_end:.3f}%** 입니다.\n"
         )
     else:
         hotzone_text = (
             "- 유효한 1순위 사정율이 부족하여 핫존을 계산할 수 없습니다.\n"
-            "  개찰이 완료된 공고를 더 추가해 주세요.\n"
+            " 개찰이 완료된 공고를 더 추가해 주세요.\n"
         )
 
     analysis_text = f"""
@@ -1006,18 +994,12 @@ def process_analysis(target_officer: str, gongo_input: str):
 {blue_desc}
 """
 
-    # ---------------------------
-    # 엑셀 파일 생성 (rec_rate 반영)
-    # ---------------------------
     excel_filename = f"사정율분석_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     wb = Workbook()
     ws = wb.active
     ws.title = "통합분석"
-
     for r in dataframe_to_rows(merged_df, index=False, header=True):
         ws.append(r)
-
-    # 2행: 1순위 사정률
     second_row = ["1순위 사정률(%)"]
     for col in merged_df.columns[1:]:
         wr = col_index_to_winrate.get(col)
@@ -1025,7 +1007,6 @@ def process_analysis(target_officer: str, gongo_input: str):
     ws.insert_rows(2)
     for col_idx, v in enumerate(second_row, start=1):
         ws.cell(row=2, column=col_idx, value=v)
-
     header_font = Font(bold=True)
     header_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
     for cell in ws[1]:
@@ -1034,27 +1015,20 @@ def process_analysis(target_officer: str, gongo_input: str):
     for cell in ws[2]:
         cell.font = header_font
         cell.alignment = header_align
-
-    # 1순위 업체 하이라이트 (노란색)
     fill_winner = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
     for col_idx, col_name in enumerate(merged_df.columns, start=1):
-        if col_idx == 1:
-            continue
+        if col_idx == 1: continue
         winner_name = col_index_to_winner.get(col_name)
-        if not winner_name:
-            continue
+        if not winner_name: continue
         for row_idx in range(3, ws.max_row + 1):
             if ws.cell(row=row_idx, column=col_idx).value == winner_name:
                 ws.cell(row=row_idx, column=col_idx).fill = fill_winner
-
-    # 추천 사정율 ±0.0001% 범위 하이라이트 (연녹색)
     if rec_rate is not None:
         highlight_fill = PatternFill(
             start_color="C6EFCE", end_color="C6EFCE", fill_type="solid"
         )
         lower = rec_rate - 0.0001
         upper = rec_rate + 0.0001
-
         for row_idx in range(3, ws.max_row + 1):
             rate_value = ws.cell(row=row_idx, column=1).value
             try:
@@ -1062,14 +1036,10 @@ def process_analysis(target_officer: str, gongo_input: str):
                 if lower <= rate_float <= upper:
                     for col_idx in range(1, ws.max_column + 1):
                         ws.cell(row=row_idx, column=col_idx).fill = highlight_fill
-            except Exception:
-                pass
-
+            except Exception: pass
     wb.save(excel_filename)
     excel_path = excel_filename
-
     progress_bar.progress(1.0, text="분석 완료")
-
     return (
         "\n".join(logs),
         merged_display_df,
@@ -1085,7 +1055,6 @@ def process_analysis(target_officer: str, gongo_input: str):
         theoretical_rates_all,
         bidder_rates_all,
     )
-
 
 # -------------------------------------------------
 # Streamlit UI (디자인 + 승률 패널 + 수동 블루오션)
